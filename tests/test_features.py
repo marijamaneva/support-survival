@@ -32,3 +32,61 @@ def test_derived_features_added():
     assert "creatinine_high" in out.columns
     assert out.loc[1, "age_over_70"] == 1   # age 75
     assert out.loc[1, "creatinine_high"] == 1  # creatinine 2.0 > 1.5
+
+
+def _toy_vitals() -> pd.DataFrame:
+    return pd.DataFrame({
+        "heart_rate": [70, 0, 110],        # 0 is implausible; 110 is tachycardic
+        "resp_rate": [16, 0, 20],          # 0 is implausible
+        "mean_bp": [80, 95, 50],           # 50 is hypotensive (< 65)
+        "wbc": [8, 0, 15],                 # 0 is implausible; 15 is leukocytosis (> 11)
+        "serum_sodium": [140, 130, 150],   # 130 and 150 are both abnormal (outside 135-145)
+    })
+
+
+def test_implausible_zero_extends_to_heart_rate_resp_rate_wbc():
+    out = features.flag_implausible(_toy_vitals())
+    assert np.isnan(out.loc[1, "heart_rate"])
+    assert np.isnan(out.loc[1, "resp_rate"])
+    assert np.isnan(out.loc[1, "wbc"])
+    assert out.loc[0, "heart_rate"] == 70  # legitimate value untouched
+
+
+def test_missingness_indicators_flag_implausible_rows():
+    flagged = features.flag_implausible(_toy_vitals())
+    out = features.add_missingness_indicators(flagged)
+    assert out.loc[1, "heart_rate_missing"] == 1
+    assert out.loc[0, "heart_rate_missing"] == 0
+    assert out.loc[1, "mean_bp_missing"] == 0  # mean_bp wasn't 0 for this row
+
+
+def test_tachycardic_flag():
+    out = features.add_clinical_features(_toy_vitals())
+    assert out.loc[2, "tachycardic"] == 1  # heart_rate 110
+    assert out.loc[0, "tachycardic"] == 0  # heart_rate 70
+
+
+def test_hypotensive_flag():
+    out = features.add_clinical_features(_toy_vitals())
+    assert out.loc[2, "hypotensive"] == 1  # mean_bp 50 < 65
+    assert out.loc[0, "hypotensive"] == 0  # mean_bp 80
+
+
+def test_leukocytosis_flag():
+    out = features.add_clinical_features(_toy_vitals())
+    assert out.loc[2, "leukocytosis"] == 1  # wbc 15 > 11
+    assert out.loc[0, "leukocytosis"] == 0  # wbc 8
+
+
+def test_sodium_abnormal_flag():
+    out = features.add_clinical_features(_toy_vitals())
+    assert out.loc[1, "sodium_abnormal"] == 1  # 130 < 135
+    assert out.loc[2, "sodium_abnormal"] == 1  # 150 > 145
+    assert out.loc[0, "sodium_abnormal"] == 0  # 140 within range
+
+
+def test_build_features_includes_missingness_and_clinical_flags():
+    out = features.build_features(_toy_vitals())
+    for col in ["heart_rate_missing", "resp_rate_missing", "wbc_missing",
+                "tachycardic", "hypotensive", "leukocytosis", "sodium_abnormal"]:
+        assert col in out.columns

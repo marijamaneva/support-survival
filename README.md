@@ -55,7 +55,7 @@ Canonical open survival dataset, no credentialing required.
 
 - [x] Phase 0 — Package scaffold, tests, CI, CLI pipeline
 - [x] Phase 1 — Cohort definition & EDA
-- [ ] Phase 2 — Feature engineering & missing-data strategy
+- [x] Phase 2 — Feature engineering & missing-data strategy
 - [ ] Phase 3 — Baseline classifiers (logistic, gradient boosting) + calibration
 - [ ] Phase 4 — Survival analysis (KM, Cox PH, PH-assumption checks, log-rank)
 - [ ] Phase 5 — Validation, calibration curves, subgroup/fairness, SHAP

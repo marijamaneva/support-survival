@@ -24,3 +24,17 @@ def test_all_features_present():
 def test_time_positive():
     df = data.load()
     assert (df["time"] > 0).all()
+
+
+def test_wbc_and_serum_sodium_are_in_clinically_plausible_ranges():
+    """Regression test for the wbc/serum_sodium label swap fixed in Phase 2.
+
+    The raw DeepSurv h5 has these two columns' values swapped relative to their
+    documented labels (see the NOTE in data.py). Real serum sodium clusters
+    tightly around 135-145 mEq/L; real white blood cell count is right-skewed
+    with a median around 9-11 (x1000/mm3). If FEATURES is ever "corrected" back
+    to the documented-but-wrong order, this test catches it.
+    """
+    df = data.load()
+    assert 130 <= df["serum_sodium"].median() <= 145
+    assert 5 <= df["wbc"].median() <= 15

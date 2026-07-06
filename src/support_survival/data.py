@@ -26,6 +26,15 @@ SOURCE_URL = (
 )
 
 # The 14 covariates, in the column order used by the DeepSurv preprocessing.
+#
+# NOTE: positions 11 and 12 are swapped relative to the DeepSurv/pycox documented
+# order ("...temperature, wbc, serum_sodium, creatinine"). The raw values at those
+# two positions do not match their documented labels: the documented "wbc" slot
+# holds a tight 110-181 range (textbook serum sodium, mEq/L, for critically ill
+# patients), and the documented "serum_sodium" slot holds a right-skewed 0-200
+# range with median ~10.6 (textbook white blood cell count, x1000/mm3; matches
+# the SUPPORT codebook's default imputation value of 9 for wblc). Verified via
+# Phase 2 EDA against the original SUPPORT/DeepSurv literature; see model card.
 FEATURES: list[str] = [
     "age",
     "sex",
@@ -38,8 +47,8 @@ FEATURES: list[str] = [
     "heart_rate",
     "resp_rate",
     "temperature",
-    "wbc",
     "serum_sodium",
+    "wbc",
     "serum_creatinine",
 ]
 
