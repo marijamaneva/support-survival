@@ -103,14 +103,52 @@ All thresholds are standard clinical cutoffs, not fitted statistics:
   flagging hypo- or hypernatremia in either direction.
 
 ## Models
-_Phases 3–4:_
-- Baseline: logistic regression, gradient boosting (binary mortality).
-- Survival: Kaplan-Meier, Cox proportional hazards (+ PH checks).
+
+### Binary mortality baselines (Phase 3)
+Two models, compared on the **binary** view of the outcome (died during
+follow-up: yes/no), on the full Phase 2 feature set (24 columns: 14 raw
+covariates, 4 missingness indicators, 6 derived clinical flags), imputed
+inside each model's own pipeline and fit with identical 5-fold stratified CV
+so the comparison is apples-to-apples:
+- **Logistic regression** — median-imputed, scaled, no interaction terms.
+  `class_weight="balanced"` was tested and **rejected**: it changed AUROC by
+  <0.002 (0.647 → 0.646) but inflated predicted risk by 0.13–0.23 across
+  probability bins (see Evaluation below) — not worth the calibration cost on
+  this cohort's moderate 68%/32% split.
+- **Gradient boosting** (XGBoost, 300 trees, depth 4, native missing-value
+  handling — no imputation needed).
+
+Survival (time-to-event) modeling — Kaplan-Meier, Cox PH — is Phase 4.
 
 ## Evaluation
-_Phase 5:_
-- Discrimination: C-index (survival), AUROC / AUPRC (binary).
-- **Calibration:** calibration curves — a predicted 20% risk should mean ~20%.
+
+### Phase 3 — binary mortality
+5-fold stratified CV, same folds for both models (`notebooks/03_baselines.ipynb`,
+`reports/roc_pr_curves.png`, `reports/calibration_curves.png`):
+
+| Model | AUROC | Average Precision |
+|---|---|---|
+| Logistic regression | 0.646 | 0.785 |
+| Gradient boosting | 0.700 | 0.824 |
+
+- **Discrimination:** gradient boosting has a real, consistent edge across the
+  full ROC and PR curves, not just the summary numbers — reported honestly
+  rather than only showing the better-looking model.
+- **Calibration** (`reports/calibration_curves.png`): gradient boosting tracks
+  the diagonal closely (within a few points at every bin). Logistic
+  regression systematically **underestimates** risk by 0.13–0.23 across bins
+  — this is what drove the decision to drop `class_weight="balanced"` above;
+  with it, the miscalibration was even worse.
+- **Explainability** (`reports/shap_summary.png`, gradient boosting fit on the
+  full cohort — for interpretation, not held-out evaluation): `cancer` is by
+  far the strongest driver of predicted risk (mean |SHAP| ≈ 0.53), then `age`
+  (≈ 0.30), then `race`, `serum_creatinine`, `temperature`, `wbc`, `mean_bp`,
+  `heart_rate` with more modest, comparable contributions. This matches the
+  Phase 1 finding that cancer status splits the Kaplan-Meier curves apart with
+  overwhelming significance — the binary and survival views agree.
+
+### Phase 5 (not yet done)
+- Discrimination: C-index (survival).
 - Uncertainty: bootstrap confidence intervals.
 - Subgroup / fairness analysis (age band, sex).
 

@@ -25,6 +25,11 @@ def logistic_baseline(numeric_cols: list[str]) -> Pipeline:
     Logistic regression is the baseline regulated-healthcare reviewers respect,
     and a strong one is often close to gradient boosting — reporting that honestly
     is part of the methodology.
+
+    No `class_weight="balanced"`: measured on this cohort (68%/32% event split),
+    it left AUROC unchanged (0.646 vs 0.647) but badly miscalibrated the model,
+    inflating predicted risk by 0.13-0.23 across probability bins (see Phase 3
+    model card entry). Not imbalanced enough to justify that cost.
     """
     pre = ColumnTransformer(
         [("num", Pipeline([
@@ -35,7 +40,7 @@ def logistic_baseline(numeric_cols: list[str]) -> Pipeline:
     )
     return Pipeline([
         ("pre", pre),
-        ("clf", LogisticRegression(max_iter=1000, class_weight="balanced")),
+        ("clf", LogisticRegression(max_iter=1000)),
     ])
 
 
