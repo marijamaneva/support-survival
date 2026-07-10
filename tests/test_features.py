@@ -36,11 +36,11 @@ def test_derived_features_added():
 
 def _toy_vitals() -> pd.DataFrame:
     return pd.DataFrame({
-        "heart_rate": [70, 0, 110],        # 0 is implausible; 110 is tachycardic
-        "resp_rate": [16, 0, 20],          # 0 is implausible
-        "mean_bp": [80, 95, 50],           # 50 is hypotensive (< 65)
-        "wbc": [8, 0, 15],                 # 0 is implausible; 15 is leukocytosis (> 11)
-        "serum_sodium": [140, 130, 150],   # 130 and 150 are both abnormal (outside 135-145)
+        "heart_rate": [70, 0, 110, 75],        # 0 is implausible; 110 is tachycardic
+        "resp_rate": [16, 0, 20, 18],          # 0 is implausible
+        "mean_bp": [80, 95, 50, 0],            # 50 is hypotensive (< 65); 0 is implausible
+        "wbc": [8, 0, 15, 10],                 # 0 is implausible; 15 is leukocytosis (> 11)
+        "serum_sodium": [140, 130, 150, 138],  # 130 and 150 are both abnormal (outside 135-145)
     })
 
 
@@ -55,9 +55,22 @@ def test_implausible_zero_extends_to_heart_rate_resp_rate_wbc():
 def test_missingness_indicators_flag_implausible_rows():
     flagged = features.flag_implausible(_toy_vitals())
     out = features.add_missingness_indicators(flagged)
+
+    # heart_rate: implausible (0) at row 1, present elsewhere
     assert out.loc[1, "heart_rate_missing"] == 1
     assert out.loc[0, "heart_rate_missing"] == 0
-    assert out.loc[1, "mean_bp_missing"] == 0  # mean_bp wasn't 0 for this row
+
+    # resp_rate: implausible (0) at row 1, present elsewhere
+    assert out.loc[1, "resp_rate_missing"] == 1
+    assert out.loc[0, "resp_rate_missing"] == 0
+
+    # mean_bp: implausible (0) at row 3, present elsewhere
+    assert out.loc[3, "mean_bp_missing"] == 1
+    assert out.loc[1, "mean_bp_missing"] == 0
+
+    # wbc: implausible (0) at row 1, present elsewhere
+    assert out.loc[1, "wbc_missing"] == 1
+    assert out.loc[0, "wbc_missing"] == 0
 
 
 def test_tachycardic_flag():

@@ -57,6 +57,8 @@ def add_clinical_features(df: pd.DataFrame) -> pd.DataFrame:
     """
     out = df.copy()
     if "age" in out:
+        # Frailty flag: mortality risk rises markedly past 70 due to reduced
+        # physiological reserve, independent of any single diagnosis.
         out["age_over_70"] = (out["age"] >= 70).astype(int)
     if "serum_creatinine" in out:
         # Renal-impairment flag: > 1.5 mg/dL is a commonly used threshold for

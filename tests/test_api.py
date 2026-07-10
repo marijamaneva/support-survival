@@ -1,0 +1,70 @@
+"""End-to-end smoke test for the FastAPI serving layer.
+
+Trains the model artifact if it doesn't exist yet (e.g. a fresh checkout, or
+CI), so this test is self-sufficient and doesn't depend on a manual step
+having been run first.
+"""
+import subprocess
+import sys
+from pathlib import Path
+
+import pytest
+from fastapi.testclient import TestClient
+
+ROOT = Path(__file__).resolve().parents[1]
+MODEL_PATH = ROOT / "models" / "gradient_boosting.joblib"
+
+VALID_PATIENT = {
+    "age": 65, "sex": 1, "race": 1, "n_comorbidities": 2, "diabetes": 0,
+    "dementia": 0, "cancer": 1, "mean_bp": 80, "heart_rate": 90,
+    "resp_rate": 20, "temperature": 37.0, "serum_sodium": 138,
+    "wbc": 9.5, "serum_creatinine": 1.1,
+}
+
+
+@pytest.fixture(scope="module", autouse=True)
+def _ensure_model_trained():
+    if not MODEL_PATH.exists():
+        subprocess.run(
+            [sys.executable, str(ROOT / "scripts" / "train_and_save.py")],
+            cwd=ROOT, check=True, timeout=300,
+        )
+
+
+@pytest.fixture
+def client():
+    from support_survival.api import app
+    return TestClient(app)
+
+
+def test_health_endpoint(client):
+    response = client.get("/health")
+    assert response.status_code == 200
+    assert response.json() == {"status": "ok"}
+
+
+def test_predict_end_to_end_returns_risk_and_version(client):
+    response = client.post("/predict", json=VALID_PATIENT)
+    assert response.status_code == 200
+    body = response.json()
+    assert 0.0 <= body["risk_probability"] <= 1.0
+    assert isinstance(body["model_version"], str) and body["model_version"]
+
+
+def test_predict_rejects_out_of_range_value(client):
+    bad = {**VALID_PATIENT, "age": -5}
+    response = client.post("/predict", json=bad)
+    assert response.status_code == 422
+
+
+def test_predict_rejects_missing_field(client):
+    incomplete = dict(VALID_PATIENT)
+    del incomplete["age"]
+    response = client.post("/predict", json=incomplete)
+    assert response.status_code == 422
+
+
+def test_predict_rejects_wrong_type(client):
+    bad = {**VALID_PATIENT, "age": "not-a-number"}
+    response = client.post("/predict", json=bad)
+    assert response.status_code == 422
