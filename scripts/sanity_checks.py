@@ -64,11 +64,14 @@ def check_km_monotonic() -> CheckResult:
 
 
 def check_targets_excluded_from_features() -> CheckResult:
-    """(b) `time`/`event` must never appear as predictive covariates, binary or Cox."""
+    """(b) `time`/`event` must never appear as predictive covariates, binary or
+    Cox; `race` must never appear as a binary-model input (undocumented
+    encoding -- see `evaluate.EXCLUDED_FROM_FEATURES`).
+    """
     df = data.load()
     feat = features.build_features(df)
     binary_cols = evaluate.feature_columns(feat)
-    leaked_binary = [c for c in ("time", "event") if c in binary_cols]
+    leaked_binary = [c for c in ("time", "event", "race") if c in binary_cols]
 
     df2 = models.encode_cancer_stage(df)
     cph = models.fit_cox(df2, COX_COVARIATES + COX_CANCER_DUMMIES)
@@ -76,11 +79,14 @@ def check_targets_excluded_from_features() -> CheckResult:
 
     passed = not leaked_binary and not leaked_cox
     if passed:
-        message = "`time`/`event` absent from both the binary feature list and the fitted Cox summary."
+        message = (
+            "`time`/`event`/`race` absent from the binary feature list; "
+            "`time`/`event` absent from the fitted Cox summary."
+        )
     else:
         message = (
-            f"Target leakage into predictive features! binary_leaked={leaked_binary}, "
-            f"cox_leaked={leaked_cox}."
+            f"Target/protected-attribute leakage into predictive features! "
+            f"binary_leaked={leaked_binary}, cox_leaked={leaked_cox}."
         )
     return CheckResult("targets_excluded_from_features", passed, message)
 

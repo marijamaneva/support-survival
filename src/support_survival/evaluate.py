@@ -27,10 +27,22 @@ REPORTS_DIR = ROOT / "reports"
 
 MODEL_LABELS = {"logistic": "Logistic regression", "gradient_boosting": "Gradient boosting"}
 
+# Excluded from every model's inputs -- not just the survival targets.
+# `race` is a numeric code (0-9) in this dataset's `.h5` export with no
+# publicly documented mapping back to actual race categories: the original
+# SUPPORT/UCI source stores race as string labels, so DeepSurv's preprocessing
+# must have applied its own numeric encoding, which isn't published anywhere
+# we could find (see the model card). Using a protected attribute as a model
+# input isn't defensible when we can't even verify what its values mean.
+EXCLUDED_FROM_FEATURES = ("time", "event", "race")
+
 
 def feature_columns(feat: pd.DataFrame) -> list[str]:
-    """All engineered columns except the survival targets (`time`, `event`)."""
-    return [c for c in feat.columns if c not in ("time", "event")]
+    """All engineered columns except the survival targets and `race` (see
+    `EXCLUDED_FROM_FEATURES`). `race` stays in the DataFrame itself -- e.g. for
+    `validate.subgroup_report` -- it's just never fed to a model as an input.
+    """
+    return [c for c in feat.columns if c not in EXCLUDED_FROM_FEATURES]
 
 
 def compare_models(

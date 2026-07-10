@@ -106,17 +106,44 @@ All thresholds are standard clinical cutoffs, not fitted statistics:
 
 ### Binary mortality baselines (Phase 3)
 Two models, compared on the **binary** view of the outcome (died during
-follow-up: yes/no), on the full Phase 2 feature set (24 columns: 14 raw
-covariates, 4 missingness indicators, 6 derived clinical flags), imputed
-inside each model's own pipeline and fit with identical 5-fold stratified CV
-so the comparison is apples-to-apples:
+follow-up: yes/no), on the Phase 2 feature set minus `race` (23 columns: 13
+raw covariates, 4 missingness indicators, 6 derived clinical flags — see
+"Excluding `race`" below), imputed inside each model's own pipeline and fit
+with identical 5-fold stratified CV so the comparison is apples-to-apples:
 - **Logistic regression** — median-imputed, scaled, no interaction terms.
   `class_weight="balanced"` was tested and **rejected**: it changed AUROC by
-  <0.002 (0.647 → 0.646) but inflated predicted risk by 0.13–0.23 across
+  <0.002 (0.644 → 0.643) but inflated predicted risk by up to 0.23 across
   probability bins (see Evaluation below) — not worth the calibration cost on
   this cohort's moderate 68%/32% split.
 - **Gradient boosting** (XGBoost, 300 trees, depth 4, native missing-value
   handling — no imputation needed).
+
+### Excluding `race` from every model
+`race` is a numeric code (0–9) in this dataset's `.h5` export. Investigation
+(prompted by wanting readable labels for the FastAPI demo form — see Phase 6):
+the original SUPPORT/UCI source stores `sex` and `race` as **string** labels
+("male"/"female"; "White, Black, Asian, Hispanic, other"), not numbers — so
+DeepSurv's preprocessing must have invented its own numeric encoding when
+converting them for their neural network, and that mapping is not published
+anywhere we could find (same class of problem as the `wbc`/`serum_sodium`
+swap in Phase 2). Our own data adds a second red flag specific to `race`: it
+has **10** distinct codes, not the 5 the documentation describes, and the
+most common single code covers only 33% of patients — implausible if any one
+code were meant to be "White," typically 70–85% of a 1990s US cohort like
+this one. `sex` has a commonly-used convention (0=female, 1=male) in other
+derived copies of SUPPORT, but since even that dataset stores sex as strings,
+we can't confirm it applies to this specific export either — `sex` is kept
+as a model input (it's binary and directly interpretable as a code either
+way) but never labeled "female"/"male" without a caveat.
+
+**Decision:** `race` is excluded from every model's feature list
+(`evaluate.EXCLUDED_FROM_FEATURES`) — Cox already excluded it in Phase 4 for
+similar reasons; this extends the same call to the binary classifiers. Cost:
+AUROC dropped by less than 0.002 for both models (see Evaluation below) —
+removing an attribute we can't responsibly interpret was nearly free.
+`race` stays in the DataFrame for subgroup reporting (Phase 5 could still
+audit performance by `race` if its encoding were ever confirmed); it is just
+never fed to a model as a predictor.
 
 ### Survival: Cox proportional hazards (Phase 4)
 Covariates: `age`, `n_comorbidities`, `mean_bp`, `heart_rate`, `serum_creatinine`,
@@ -179,24 +206,29 @@ justified.
 
 | Model | AUROC | Average Precision |
 |---|---|---|
-| Logistic regression | 0.646 | 0.785 |
-| Gradient boosting | 0.700 | 0.824 |
+| Logistic regression | 0.643 | 0.784 |
+| Gradient boosting | 0.698 | 0.822 |
 
 - **Discrimination:** gradient boosting has a real, consistent edge across the
   full ROC and PR curves, not just the summary numbers — reported honestly
   rather than only showing the better-looking model.
-- **Calibration** (`reports/calibration_curves.png`): gradient boosting tracks
-  the diagonal closely (within a few points at every bin). Logistic
-  regression systematically **underestimates** risk by 0.13–0.23 across bins
-  — this is what drove the decision to drop `class_weight="balanced"` above;
-  with it, the miscalibration was even worse.
+- **Calibration** (`reports/calibration_curves.png`): both models track the
+  diagonal reasonably well — gradient boosting within about 4–5 points at
+  every bin, logistic regression within about 5 points too. (An earlier
+  version of this entry claimed logistic regression "systematically
+  underestimates risk by 0.13–0.23" — that number was the **rejected**
+  `class_weight="balanced"` configuration's miscalibration, mistakenly
+  attributed to the model actually shipped. Caught while re-verifying
+  calibration for the `race` exclusion above; the plot was always correct,
+  only this description was wrong.)
 - **Explainability** (`reports/shap_summary.png`, gradient boosting fit on the
   full cohort — for interpretation, not held-out evaluation): `cancer` is by
-  far the strongest driver of predicted risk (mean |SHAP| ≈ 0.53), then `age`
-  (≈ 0.30), then `race`, `serum_creatinine`, `temperature`, `wbc`, `mean_bp`,
-  `heart_rate` with more modest, comparable contributions. This matches the
-  Phase 1 finding that cancer status splits the Kaplan-Meier curves apart with
-  overwhelming significance — the binary and survival views agree.
+  far the strongest driver of predicted risk (mean |SHAP| ≈ 0.54), then `age`
+  (≈ 0.30), then `serum_creatinine`, `wbc`, `mean_bp`, `temperature`, `sex`,
+  `heart_rate` with more modest, comparable contributions (filling the ranks
+  `race` occupied before it was excluded). This matches the Phase 1 finding
+  that cancer status splits the Kaplan-Meier curves apart with overwhelming
+  significance — the binary and survival views agree.
 
 ### Phase 4 — survival (C-index)
 `models.cross_val_concordance` mirrors Phase 3's out-of-fold rigor (a plain
@@ -208,7 +240,7 @@ justified.
 | Cox, stratified by cancer | 0.566 |
 
 Compared to Phase 3: both Cox variants trail gradient boosting's AUROC
-(0.700); the dummy-coded Cox is close to logistic regression's AUROC (0.646).
+(0.698); the dummy-coded Cox is close to logistic regression's AUROC (0.643).
 The stratified model's lower score is largely a metric artifact, not
 necessarily worse real-world utility: concordance is computed from the risk
 score alone, which structurally excludes `cancer` once it's a stratum rather
@@ -230,24 +262,25 @@ all three. `test` is used only for final reporting below — never to fit a
 model, tune a hyperparameter, or fit a recalibrator (that used `val`).
 
 **Calibration & recalibration.** Gradient boosting (trained on `train` only,
-same configuration Phase 3 selected via CV — no new tuning here) scores
-Brier 0.1945 on `test`. An isotonic recalibrator fit strictly on `val`
-(`validate.fit_isotonic_recalibrator`) barely changes it (0.1942) —
-consistent with Phase 3's finding that this model was already reasonably
-calibrated; recalibration was checked, not skipped, and simply wasn't
-needed. Reliability diagram: `reports/calibration_test_before_after.png`.
-**Decision:** serve the raw (non-recalibrated) model.
+same configuration Phase 3 selected via CV, on the `race`-excluded feature
+set — no new tuning here) scores Brier 0.1939 on `test`. An isotonic
+recalibrator fit strictly on `val` (`validate.fit_isotonic_recalibrator`)
+barely changes it (0.1944, very slightly *worse*) — consistent with Phase
+3's finding that this model was already reasonably calibrated; recalibration
+was checked, not skipped, and simply wasn't needed. Reliability diagram:
+`reports/calibration_test_before_after.png`. **Decision:** serve the raw
+(non-recalibrated) model.
 
 **Uncertainty (bootstrap, 2,000/1,000 resamples of `test` only):**
 
 | Metric | Point | 95% CI |
 |---|---|---|
-| Gradient boosting AUROC | 0.699 | [0.672, 0.724] |
-| Gradient boosting Brier | 0.194 | [0.186, 0.204] |
+| Gradient boosting AUROC | 0.700 | [0.674, 0.725] |
+| Gradient boosting Brier | 0.194 | [0.185, 0.203] |
 | Cox concordance (dummy-coded) | 0.608 | [0.590, 0.626] |
 
 Both point estimates land close to their Phase 3/4 cross-validated
-counterparts (0.700, 0.598) — good agreement between the CV comparison and
+counterparts (0.698, 0.598) — good agreement between the CV comparison and
 this independent held-out estimate. Neither CI is wide enough to change the
 qualitative conclusions from Phase 3/4, and neither approaches the 0.85+
 range that would call for a leakage investigation.
@@ -257,31 +290,32 @@ calibration; `test` set, raw model):
 
 | Age band | n | Event rate | AUROC | Brier |
 |---|---|---|---|---|
-| <50 | 363 | 49.9% | 0.741 | 0.205 |
-| 50–64 | 524 | 71.9% | 0.665 | 0.194 |
-| 65–74 | 465 | 71.0% | 0.657 | 0.194 |
-| 75–84 | 338 | 76.0% | 0.595 | 0.182 |
-| **85+** | 85 | 72.9% | **0.545** | 0.205 |
+| <50 | 363 | 49.9% | 0.744 | 0.205 |
+| 50–64 | 524 | 71.9% | 0.661 | 0.194 |
+| 65–74 | 465 | 71.0% | 0.648 | 0.195 |
+| 75–84 | 338 | 76.0% | 0.599 | 0.180 |
+| **85+** | 85 | 72.9% | **0.595** | 0.199 |
 
 | Sex (code) | n | Event rate | AUROC | Brier |
 |---|---|---|---|---|
-| 0 | 997 | 69.4% | 0.718 | 0.186 |
-| 1 | 778 | 66.2% | 0.674 | 0.205 |
+| 0 | 997 | 69.4% | 0.717 | 0.186 |
+| 1 | 778 | 66.2% | 0.680 | 0.204 |
 
-**Documented limitation:** discrimination degrades sharply with age —
-AUROC 0.741 (<50) down to **0.545 for patients 85+**, barely better than
-random ranking, even though Brier score stays roughly flat (~0.18–0.21)
-across bands. Calibration and discrimination are different failure modes:
-this model is passably calibrated *on average* for the oldest patients while
-being nearly unable to rank them by risk. **Any future use of this model
-should flag predictions for patients 85+ as low-confidence.** By sex: a
-smaller but present gap (AUROC 0.718 vs 0.674). `sex` is documented only as
+**Documented limitation:** discrimination degrades with age — AUROC 0.744
+(<50) down to **0.595 for patients 85+**, a real ~15-point gap, even though
+Brier score stays roughly flat (~0.18–0.20) across bands. Calibration and
+discrimination are different failure modes: this model is passably
+calibrated *on average* for the oldest patients while ranking them
+noticeably worse than younger patients. **Any future use of this model
+should flag predictions for patients 85+ as lower-confidence.** By sex: a
+smaller but present gap (AUROC 0.717 vs 0.680). `sex` is documented only as
 "encoded" (`data.DESCRIPTIONS`) — which code is male vs female is not
-independently confirmed by the data or its source documentation, so this is
+independently confirmed by the data or its source documentation (see
+"Excluding `race`" above — the same investigation covered `sex`), so this is
 reported by code value without asserting which is which.
 
 **Error analysis.** The model's largest errors are clinically coherent, not
-random. Over-predicted (high predicted risk, but survived): 13 of the 15
+random. Over-predicted (high predicted risk, but survived): 12 of the 15
 worst cases have `cancer=0`, vastly overrepresented vs. the 19.7% base rate
 — `cancer=0` is this cohort's highest-mortality group (other severe SUPPORT
 diagnoses, not "healthy"; see Phase 4), so the model has learned a strong,
@@ -294,15 +328,23 @@ best-prognosis profile, and the mirror-image failure of the same prior.
 
 `src/support_survival/api.py`, a FastAPI app: `POST /predict` (Pydantic-validated
 input, returns `{risk_probability, model_version}`), `GET /health` (container
-health check). `scripts/train_and_save.py` trains gradient boosting on the
+health check), `GET /` (a small interactive demo page: form → prediction →
+a risk meter with a marker at the cohort's 68% baseline event rate, and a
+plain-language risk band — illustrative only, not a validated clinical risk
+category). `scripts/train_and_save.py` trains gradient boosting on the
 **full** cohort (not held back — Phase 5 already produced an honest, held-out
-performance estimate for this architecture: AUROC 0.699, 95% CI
-[0.672, 0.724]) and persists it to `models/gradient_boosting.joblib`, which is
+performance estimate for this architecture: AUROC 0.700, 95% CI
+[0.674, 0.725]) and persists it to `models/gradient_boosting.joblib`, which is
 gitignored and regenerated from scratch, not committed.
 
 **Train/serve consistency:** `predict()` calls `features.build_features`
 directly — the same function, same import, used in every training notebook.
-No preprocessing logic is duplicated in the app.
+No preprocessing logic is duplicated in the app. The Pydantic schema asks for
+13 of the 14 raw covariates — `race` is omitted entirely (not just unlabeled)
+per the exclusion decision above, and `sex`'s field description flags that
+its 0/1 mapping to male/female isn't independently confirmed for this
+dataset. The demo page's form mirrors this: no `race` input, and the `sex`
+field is labeled "code; mapping unconfirmed" rather than "Male"/"Female".
 
 **Input validation:** the Pydantic schema rejects genuinely impossible values
 (negative age, out-of-range vitals, wrong types, missing fields) with a 422
@@ -336,6 +378,53 @@ inside `site-packages` instead of a proper data directory), so it was not
 changed here — but it is the same latent fragility, and the reason
 `sanity_checks.py` and the API bug above weren't caught until an actual
 container run.
+
+### Triage panel (`GET /triage`, `GET /triage-view`)
+
+Reframed from an earlier, rejected idea (estimating freed-up hospital beds
+from predicted mortality — a poor fit: dying patients can occupy a bed
+*longer* than quickly-discharged low-risk ones, and SUPPORT has no
+discharge/transfer timestamps to model that anyway). The reframe: a
+**risk-stratified patient panel for care-team triage**, closer to what
+SUPPORT was originally built for (improving prognosis communication for
+seriously ill patients — literally what the acronym stands for).
+
+**Why Cox, not just the binary classifier.** A single risk probability
+conflates "high risk very soon" with "high risk eventually" — not useful for
+urgency. `models.predict_risk_at_horizons` uses the Phase 4 Cox model's
+individual survival curve to give each patient a 30-day and 90-day mortality
+risk, not just one number. Tiers: **Urgent** (30-day risk ≥ 40%, roughly the
+cohort's 90th percentile), **Monitor** (overall risk ≥ 65% but not urgent),
+**Routine** (otherwise). `train_and_save.py` now also fits and persists the
+Phase 4 primary Cox model (dummy-coded cancer, full cohort) alongside the
+classifier, in the same artifact.
+
+Patients come from a **fixed random sample of the Phase 5 held-out test
+set** (`random_state=7`, stable across requests) — there is no live hospital
+feed; this is a demonstration.
+
+**A second train/serve bug, same family as the path bug above, found while
+building this.** The Cox model was trained (Phase 4, and again in
+`train_and_save.py`) on **raw** covariates — `flag_implausible` was never
+applied to its inputs. The first version of `/triage` built its Cox input
+from `features.build_features(df)`, which *does* flag implausible zeros
+(`mean_bp`, `heart_rate`, `wbc` → `NaN`) — so a handful of patients silently
+got `null` 30-/90-day risk (`predict_survival_function` can't handle `NaN`
+inputs). Fixed by splitting on the **raw** `df` for the Cox input (matching
+what the model actually trained on) while still using the featurized frame
+for the binary classifier — the same patients either way, since `df` and
+`feat` share an index; just the right preprocessing state for each model.
+Caught before shipping, by checking the actual endpoint output, not just
+that it returned 200.
+
+**Explicit, undismissable limitation:** the panel's least reliable
+predictions are for patients 85+ (Phase 5: AUROC 0.595 vs 0.744 for
+under-50s) — precisely the group where a triage/goals-of-care call is most
+consequential. The triage page states this in a banner above the table, not
+buried in a caveats section. Tiers are a prompt for a conversation, never an
+automated allocation decision — the same caution that motivated rejecting
+the original "beds freed by predicted death" framing applies here too, just
+less severely.
 
 ## Ethical & governance notes
 - No raw patient-level data committed.

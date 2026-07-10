@@ -15,14 +15,14 @@ import argparse
 from sklearn.metrics import roc_auc_score
 from sklearn.model_selection import cross_val_predict
 
-from support_survival import data, features, models
+from support_survival import data, evaluate, features, models
 
 
 def run(quick: bool = False) -> dict:
     df = data.load()
     feat = features.build_features(df)
 
-    numeric_cols = [c for c in data.FEATURES]  # imputer handles the NaNs we flagged
+    numeric_cols = evaluate.feature_columns(feat)  # excludes time/event/race
     # Binary target: did the patient die during observed follow-up?
     y = df["event"].to_numpy()
 

@@ -90,6 +90,24 @@ input (missing field, wrong type, out-of-range value) is rejected with a 422
 by the Pydantic schema before it ever reaches the model. `GET /health` is
 used as the container health check.
 
+`GET /` serves a small interactive demo page (form → `/predict` → a risk
+meter with a marker at the cohort's observed baseline event rate) — the
+easiest way to see the model behave without touching `/docs` or `curl`.
+
+`GET /triage-view` (data from `GET /triage`) is a **risk-stratified patient
+panel** — decision-support triage, not automated resource allocation. It
+ranks a sample of held-out patients by 30-day mortality risk, computed from
+the Cox model's individual survival curve (`models.predict_risk_at_horizons`):
+a single risk score can't tell "high risk very soon" apart from "high risk
+eventually," which matters for urgency in a way the binary classifier alone
+can't capture. Tiers (Urgent / Monitor / Routine) are meant to prompt a
+care-team conversation, never an automatic decision — see the model card for
+the reasoning and its limits (worth noting: the model's weakest subgroup,
+patients 85+, is exactly the population where triage calls matter most).
+
+`GET /docs` is FastAPI's auto-generated Swagger UI, with a pre-filled example
+patient, for exploring the API directly.
+
 ### Docker
 
 ```bash

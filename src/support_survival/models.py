@@ -27,8 +27,8 @@ def logistic_baseline(numeric_cols: list[str]) -> Pipeline:
     is part of the methodology.
 
     No `class_weight="balanced"`: measured on this cohort (68%/32% event split),
-    it left AUROC unchanged (0.646 vs 0.647) but badly miscalibrated the model,
-    inflating predicted risk by 0.13-0.23 across probability bins (see Phase 3
+    it left AUROC unchanged (0.643 vs 0.644) but badly miscalibrated the model,
+    inflating predicted risk by up to 0.23 across probability bins (see Phase 3
     model card entry). Not imbalanced enough to justify that cost.
     """
     pre = ColumnTransformer(
@@ -159,6 +159,23 @@ def cross_val_concordance(
             cph.score(test_df[all_cols + ["time", "event"]], scoring_method="concordance_index")
         )
     return scores
+
+
+def predict_risk_at_horizons(
+    cph, df: pd.DataFrame, covariates: list[str], horizons: list[float]
+) -> pd.DataFrame:
+    """Probability of death by each horizon (same time units as `time`, i.e.
+    days), per patient, from a fitted Cox model's individual survival curve.
+
+    A single overall risk probability (the binary-classifier view) conflates
+    "high risk soon" with "high risk eventually" -- this distinguishes them,
+    which is the whole point of using the survival (not just binary) model
+    for triage/urgency rather than a single risk score.
+    """
+    survival = cph.predict_survival_function(df[covariates], times=horizons)
+    risk = (1 - survival).T
+    risk.columns = [f"risk_at_{int(h)}d" for h in horizons]
+    return risk
 
 
 def hazard_ratio_table(cph) -> pd.DataFrame:

@@ -177,3 +177,20 @@ def test_hazard_ratio_table_has_expected_columns_and_sorting():
     assert list(table.columns) == ["hazard_ratio", "hr_lower_95", "hr_upper_95", "p_value"]
     assert table["p_value"].is_monotonic_increasing
     assert (table["hazard_ratio"] > 0).all()
+
+
+def test_predict_risk_at_horizons_returns_one_row_per_patient_in_range():
+    df = _toy_survival(n=100)
+    cph = models.fit_cox(df, ["age", "mean_bp"])
+    risk = models.predict_risk_at_horizons(cph, df, ["age", "mean_bp"], horizons=[30, 90])
+    assert list(risk.columns) == ["risk_at_30d", "risk_at_90d"]
+    assert len(risk) == len(df)
+    assert ((risk >= 0) & (risk <= 1)).all().all()
+
+
+def test_predict_risk_at_horizons_is_non_decreasing_in_time():
+    df = _toy_survival(n=100)
+    cph = models.fit_cox(df, ["age", "mean_bp"])
+    risk = models.predict_risk_at_horizons(cph, df, ["age", "mean_bp"], horizons=[30, 90])
+    # Probability of death by day 90 can't be less than by day 30.
+    assert (risk["risk_at_90d"] >= risk["risk_at_30d"] - 1e-9).all()

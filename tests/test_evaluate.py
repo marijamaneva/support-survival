@@ -37,6 +37,14 @@ def test_feature_columns_excludes_targets():
     assert set(cols) == {"age", "mean_bp"}
 
 
+def test_feature_columns_excludes_race():
+    feat = _toy_features()
+    feat["race"] = 1
+    cols = evaluate.feature_columns(feat)
+    assert "race" not in cols
+    assert set(cols) == {"age", "mean_bp"}
+
+
 def test_compare_models_returns_valid_probabilities():
     result = evaluate.compare_models(_toy_features(), cv=3)
     n = len(result["y_true"])

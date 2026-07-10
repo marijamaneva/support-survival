@@ -15,7 +15,7 @@ ROOT = Path(__file__).resolve().parents[1]
 MODEL_PATH = ROOT / "models" / "gradient_boosting.joblib"
 
 VALID_PATIENT = {
-    "age": 65, "sex": 1, "race": 1, "n_comorbidities": 2, "diabetes": 0,
+    "age": 65, "sex": 1, "n_comorbidities": 2, "diabetes": 0,
     "dementia": 0, "cancer": 1, "mean_bp": 80, "heart_rate": 90,
     "resp_rate": 20, "temperature": 37.0, "serum_sodium": 138,
     "wbc": 9.5, "serum_creatinine": 1.1,
@@ -68,3 +68,43 @@ def test_predict_rejects_wrong_type(client):
     bad = {**VALID_PATIENT, "age": "not-a-number"}
     response = client.post("/predict", json=bad)
     assert response.status_code == 422
+
+
+def test_demo_page_serves_html_with_the_predict_form(client):
+    response = client.get("/")
+    assert response.status_code == 200
+    assert "text/html" in response.headers["content-type"]
+    assert 'id="predict-form"' in response.text
+    assert "/predict" in response.text
+
+
+def test_triage_returns_ranked_patients_with_both_risk_horizons(client):
+    response = client.get("/triage")
+    assert response.status_code == 200
+    body = response.json()
+    patients = body["patients"]
+    assert len(patients) == 15
+    for p in patients:
+        assert 0.0 <= p["overall_risk"] <= 1.0
+        assert 0.0 <= p["risk_30d"] <= 1.0
+        assert 0.0 <= p["risk_90d"] <= 1.0
+        assert p["risk_90d"] >= p["risk_30d"] - 1e-9
+        assert p["tier"] in {"Urgent", "Monitor", "Routine"}
+    # sorted by 30-day risk, descending
+    risks_30d = [p["risk_30d"] for p in patients]
+    assert risks_30d == sorted(risks_30d, reverse=True)
+
+
+def test_triage_is_stable_across_requests():
+    from support_survival.api import app
+    client_a, client_b = TestClient(app), TestClient(app)
+    ids_a = [p["patient_id"] for p in client_a.get("/triage").json()["patients"]]
+    ids_b = [p["patient_id"] for p in client_b.get("/triage").json()["patients"]]
+    assert ids_a == ids_b
+
+
+def test_triage_view_serves_html_pointing_at_triage_endpoint(client):
+    response = client.get("/triage-view")
+    assert response.status_code == 200
+    assert "text/html" in response.headers["content-type"]
+    assert "/triage" in response.text
