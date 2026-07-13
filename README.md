@@ -131,5 +131,7 @@ Canonical open survival dataset, no credentialing required.
 - [x] Phase 4 — Survival analysis (KM, Cox PH, PH-assumption checks, log-rank)
 - [x] Phase 5 — Validation, calibration curves, subgroup/fairness, SHAP
 - [x] Phase 6 — Model card finalized + FastAPI/Docker serving
+- [x] Phase 7 — Follow-up: hyperparameter search (adopted), Cox PH violations
+      revisited (partial), `data.py` path bug fixed
 
 See `reports/model_card.md` for the living methodology record.

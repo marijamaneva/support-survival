@@ -45,7 +45,15 @@ def logistic_baseline(numeric_cols: list[str]) -> Pipeline:
 
 
 def gradient_boosting():
-    """XGBoost mortality classifier. Imported lazily to keep import cost low."""
+    """XGBoost mortality classifier. Imported lazily to keep import cost low.
+
+    Reasoned defaults (shallow trees, low learning rate, moderate subsampling
+    to resist overfitting), not the product of a tuning sweep -- Phase 3 said
+    so explicitly. `tune_gradient_boosting` / `gradient_boosting_tuned` below
+    are the follow-up that actually ran a search (see the model card's Phase 7
+    entry); this function is kept as-is so the Phase 3-5 numbers it produced
+    stay reproducible.
+    """
     from xgboost import XGBClassifier
 
     return XGBClassifier(
@@ -57,6 +65,63 @@ def gradient_boosting():
         eval_metric="logloss",
         n_jobs=-1,
     )
+
+
+def tune_gradient_boosting(
+    X: pd.DataFrame, y, cv: int = 5, n_iter: int = 40, random_state: int = 42
+):
+    """Randomized hyperparameter search for gradient boosting, scored by AUROC
+    under the same stratified-CV protocol as Phase 3's model comparison.
+
+    Returns the fitted `RandomizedSearchCV` (`.best_estimator_`, `.best_params_`,
+    `.best_score_` are the interesting attributes). Searches tree depth,
+    learning rate, number of trees, and both subsampling rates -- the same
+    knobs Phase 3 set by hand -- so the comparison is honest: same search
+    space a manual sweep would have covered, not a cherry-picked one.
+    """
+    from scipy.stats import randint, uniform
+    from sklearn.model_selection import RandomizedSearchCV, StratifiedKFold
+
+    base = gradient_boosting()
+    base.set_params(n_jobs=1)  # avoid oversubscribing CPU cores under RandomizedSearchCV's own n_jobs=-1
+    skf = StratifiedKFold(n_splits=cv, shuffle=True, random_state=random_state)
+    search = RandomizedSearchCV(
+        base,
+        param_distributions={
+            "n_estimators": randint(100, 600),
+            "max_depth": randint(2, 7),
+            "learning_rate": uniform(0.01, 0.19),
+            "subsample": uniform(0.6, 0.4),
+            "colsample_bytree": uniform(0.6, 0.4),
+            "min_child_weight": randint(1, 10),
+        },
+        n_iter=n_iter,
+        scoring="roc_auc",
+        cv=skf,
+        random_state=random_state,
+        n_jobs=-1,
+    )
+    search.fit(X, y)
+    return search
+
+
+def gradient_boosting_tuned():
+    """The gradient boosting configuration `tune_gradient_boosting` found
+    (Phase 7 follow-up): held-out test AUROC 0.711 vs 0.700 for the untuned
+    `gradient_boosting()` (Phase 5 protocol, same split), Brier 0.192 vs 0.194
+    -- both discrimination and calibration improved, not just the metric that
+    was optimized for. This is the configuration `train_and_save.py` ships.
+    """
+    gb = gradient_boosting()
+    gb.set_params(
+        n_estimators=120,
+        max_depth=4,
+        learning_rate=0.018825578416799573,
+        subsample=0.7801997007878172,
+        colsample_bytree=0.836965827544817,
+        min_child_weight=7,
+    )
+    return gb
 
 
 def fit_cox(df: pd.DataFrame, covariates: list[str], strata: list[str] | None = None):

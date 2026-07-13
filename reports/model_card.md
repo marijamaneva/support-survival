@@ -370,14 +370,17 @@ environment-variable override. Verified with a full rebuild + container run:
 `/health` → `{"status":"ok"}`, `/predict` → a valid risk probability,
 malformed input → 422.
 
-**Known adjacent risk, not fixed:** `data.py`'s `ROOT`/`DATA_DIR` use the same
-`Path(__file__).resolve().parents[2]` pattern that caused the bug above. It
-happens to still "work" under a non-editable install (it writes and reads the
-downloaded dataset from a self-consistent but semantically wrong location
-inside `site-packages` instead of a proper data directory), so it was not
-changed here — but it is the same latent fragility, and the reason
-`sanity_checks.py` and the API bug above weren't caught until an actual
-container run.
+**Follow-up (fixed):** `data.py`'s `ROOT`/`DATA_DIR` used the same
+`Path(__file__).resolve().parents[2]` pattern that caused the bug above —
+flagged here at the time as a known adjacent risk, not yet fixed. It never
+crashed (it wrote and read the downloaded dataset from a self-consistent but
+semantically wrong location inside `site-packages` instead of a proper data
+directory, so reads always matched writes), and it's on the live path the
+triage panel actually exercises (`GET /triage` calls `data.load()`). Now
+resolved the same way as `MODEL_PATH`: relative to the working directory,
+with a `SUPPORT_SURVIVAL_ROOT` env var override, and a regression test
+(`test_root_is_cwd_relative_not_file_relative`) guarding against `__file__`
+creeping back in.
 
 ### Triage panel (`GET /triage`, `GET /triage-view`)
 
@@ -425,6 +428,64 @@ buried in a caveats section. Tiers are a prompt for a conversation, never an
 automated allocation decision — the same caution that motivated rejecting
 the original "beds freed by predicted death" framing applies here too, just
 less severely.
+
+## Phase 7 — Follow-up on two deferred items
+
+Two things were left explicitly unfinished earlier: Phase 3's "no
+hyperparameter search backed these defaults," and Phase 4's disclosed
+`mean_bp`/`wbc` PH violations, "left for Phase 5... rather than fixed here"
+(Phase 5 never did it either). `notebooks/07_followups.ipynb` closes both
+out — one becomes a real, adopted improvement; the other stays a disclosed,
+partial result rather than a forced fix.
+
+### Hyperparameter search (adopted)
+`models.tune_gradient_boosting` runs a 40-sample randomized search over tree
+count, depth, learning rate, and both subsampling rates, scored by AUROC
+under the same 5-fold stratified CV protocol Phase 3 used to compare models.
+Best CV AUROC: 0.708. Verified on Phase 5's untouched held-out test set
+(never used by the search): **AUROC 0.700 → 0.711, Brier 0.194 → 0.192** —
+both discrimination and calibration improved together, not a trade-off.
+Winning configuration: `n_estimators=120`, `max_depth=4`,
+`learning_rate≈0.019`, `subsample≈0.78`, `colsample_bytree≈0.84`,
+`min_child_weight=7` — fewer, shallower trees with a lower learning rate
+than Phase 3's hand-set defaults (300 trees, `learning_rate=0.05`).
+**Decision:** `models.gradient_boosting_tuned()` is now what
+`scripts/train_and_save.py` ships and the triage panel serves. Phase 3's own
+reported numbers (0.643/0.698 AUROC) are left unchanged: they describe the
+untuned baseline that was actually compared at the time and stay
+reproducible from `models.gradient_boosting()`.
+
+### Cox PH violations: `mean_bp` fixed, `wbc` not (disclosed, not forced)
+Standard remedy for a covariate whose continuous form violates proportional
+hazards: model it categorically instead. Both `mean_bp` and `wbc` were split
+into three clinical bands (low/normal/high; implausible zeros excluded, 96
+of 8,873 rows). Result: **`mean_bp` resolved** (`mean_bp_low` p≈0.31,
+`mean_bp_high` p≈0.19, both comfortably clear the 0.05 threshold that the
+continuous version failed at p≈0.001). **`wbc` did not** (`wbc_high`
+borderline at p≈0.044, `wbc_low` still fails at p≈0.000002) — banding didn't
+fix it. A third covariate, `heart_rate`, newly showed a violation (p≈0.003)
+not present in the original check, reported rather than dropped quietly;
+plausibly the 96 excluded rows shift the sample slightly. Concordance was
+essentially unchanged (0.585 vs 0.583 for this vitals-only comparison) — no
+gain, no loss.
+
+Plausible reason `wbc` resists this fix where `mean_bp` doesn't: a single
+low blood-pressure reading likely reflects noise around a stable
+physiological state, while an abnormal white blood cell count (especially
+low, e.g. chemotherapy-induced neutropenia) can mark a changing
+*trajectory* — its relationship to risk plausibly shifts shape over
+follow-up in a way three static bands can't capture. Properly fixing that
+needs a genuine time-varying-covariate model (`CoxTimeVaryingFitter`,
+restructuring each patient's follow-up into time-sliced episodes) — a
+materially larger undertaking than this follow-up, out of scope here.
+**Decision:** Phase 4's primary served Cox model is unchanged. Adopting the
+banded version would fix one violation, surface another, and not fix the
+one it targeted, for no concordance gain — not a clean win, and not worth
+touching an already-validated model for.
+
+### `data.py` path bug (fixed)
+See the Phase 6 entry above: `ROOT`/`DATA_DIR` no longer derive from
+`__file__`, closing the adjacent risk flagged there at the time.
 
 ## Ethical & governance notes
 - No raw patient-level data committed.

@@ -1,4 +1,8 @@
 """Tests for data loading."""
+import importlib
+import os
+from pathlib import Path
+
 from support_survival import data
 
 
@@ -38,3 +42,22 @@ def test_wbc_and_serum_sodium_are_in_clinically_plausible_ranges():
     df = data.load()
     assert 130 <= df["serum_sodium"].median() <= 145
     assert 5 <= df["wbc"].median() <= 15
+
+
+def test_root_is_cwd_relative_not_file_relative():
+    """Regression test for the path-resolution bug once found (and fixed) in
+    `api.py`'s `MODEL_PATH`: `ROOT` must never be computed from `__file__`,
+    which breaks under a non-editable install (the file lands in
+    site-packages). It should resolve relative to the working directory,
+    honoring `SUPPORT_SURVIVAL_ROOT` when set.
+    """
+    assert data.ROOT == Path(".")
+
+    os.environ["SUPPORT_SURVIVAL_ROOT"] = "/tmp/somewhere-else"
+    try:
+        reloaded = importlib.reload(data)
+        assert reloaded.ROOT == Path("/tmp/somewhere-else")
+        assert reloaded.DATA_DIR == Path("/tmp/somewhere-else/data")
+    finally:
+        del os.environ["SUPPORT_SURVIVAL_ROOT"]
+        importlib.reload(data)

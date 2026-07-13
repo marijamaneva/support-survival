@@ -6,10 +6,11 @@ Run this to (re)generate the model artifact from scratch:
 
 The artifact is never committed (see .gitignore) -- this script is how you
 get it back, deterministically, from the same code the rest of the project
-uses. Trains on the full cohort rather than holding data back: Phase 5 already
-produced an honest, held-out performance estimate for this model architecture
-(AUROC 0.700, 95% CI [0.674, 0.725]), so the artifact shipped for serving uses
-all available data instead of sacrificing some of it a second time.
+uses. Trains on the full cohort rather than holding data back: Phase 5/7
+already produced an honest, held-out performance estimate for this exact
+model architecture (AUROC 0.711, 95% CI [0.686, 0.737], the Phase 7-tuned
+configuration), so the artifact shipped for serving uses all available data
+instead of sacrificing some of it a second time.
 
 Also fits the primary Cox model from Phase 4 (dummy-coded cancer) on the full
 cohort, saved alongside the classifier -- the triage view (`GET /triage`)
@@ -40,7 +41,7 @@ def main() -> Path:
     feat = features.build_features(df)
     feature_columns = evaluate.feature_columns(feat)
 
-    gb = models.gradient_boosting()
+    gb = models.gradient_boosting_tuned()
     gb.fit(feat[feature_columns], feat["event"])
 
     # Same primary Cox model chosen in Phase 4 (dummy-coded cancer, not

@@ -38,6 +38,35 @@ def test_gradient_boosting_fits_and_predicts_probabilities():
     assert ((proba >= 0) & (proba <= 1)).all()
 
 
+def _toy_classification(n=60, seed=0):
+    rng = np.random.RandomState(seed)
+    age = rng.normal(60, 10, n)
+    mean_bp = rng.normal(80, 15, n)
+    logit = 0.03 * age - 0.02 * mean_bp
+    p = 1 / (1 + np.exp(-logit))
+    y = (rng.uniform(size=n) < p).astype(int)
+    return pd.DataFrame({"age": age, "mean_bp": mean_bp}), pd.Series(y)
+
+
+def test_tune_gradient_boosting_returns_a_fitted_search_with_valid_params():
+    X, y = _toy_classification()
+    search = models.tune_gradient_boosting(X, y, cv=3, n_iter=3)
+    assert 0 <= search.best_score_ <= 1
+    for key in ("n_estimators", "max_depth", "learning_rate", "subsample", "colsample_bytree"):
+        assert key in search.best_params_
+    proba = search.best_estimator_.predict_proba(X)[:, 1]
+    assert len(proba) == len(X)
+
+
+def test_gradient_boosting_tuned_fits_and_predicts_probabilities():
+    X, y = _toy()
+    gb = models.gradient_boosting_tuned()
+    gb.fit(X, y)
+    proba = gb.predict_proba(X)[:, 1]
+    assert len(proba) == len(X)
+    assert ((proba >= 0) & (proba <= 1)).all()
+
+
 def _toy_survival(n=100, seed=0) -> pd.DataFrame:
     rng = np.random.RandomState(seed)
     age = rng.normal(60, 10, n)

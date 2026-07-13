@@ -7,6 +7,7 @@ No credentialing required.
 """
 from __future__ import annotations
 
+import os
 import urllib.request
 from pathlib import Path
 
@@ -14,8 +15,18 @@ import h5py
 import numpy as np
 import pandas as pd
 
-# Repo root = three parents up from this file (src/support_survival/data.py).
-ROOT = Path(__file__).resolve().parents[2]
+# Deliberately NOT `Path(__file__).resolve().parents[2]`: under a non-editable
+# install (`pip install .`, used in the Dockerfile) `__file__` resolves inside
+# site-packages, so counting parent directories lands in a writable-but-wrong
+# spot (e.g. inside the Python installation itself) instead of the repo root --
+# the same class of bug once found and fixed in `api.py`'s `MODEL_PATH`. It
+# never crashed here (every caller used this same wrong-but-consistent
+# computation, so reads always found what writes had produced), but it's bad
+# hygiene and a latent risk in any environment where that location isn't
+# writable. Resolve relative to the working directory instead -- set correctly
+# by every documented entry point (local dev, tests, the container's
+# `WORKDIR /app`) -- with an env var escape hatch for anything unusual.
+ROOT = Path(os.environ.get("SUPPORT_SURVIVAL_ROOT", "."))
 DATA_DIR = ROOT / "data"
 RAW_H5 = DATA_DIR / "support_raw.h5"
 CSV = DATA_DIR / "support.csv"
