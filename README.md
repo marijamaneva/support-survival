@@ -134,6 +134,14 @@ docker run -p 8000:8000 support-survival
 curl http://localhost:8000/health
 ```
 
+### Deploying (Render)
+
+`render.yaml` defines a free Docker web service using the same `Dockerfile`
+as local dev, no separate deploy config to maintain. On [render.com](https://render.com):
+"New" → "Blueprint" → point at this repo → Render reads `render.yaml` and
+deploys it. Free tier sleeps after inactivity and takes ~30-60s to wake on
+the next request.
+
 ## Dataset
 
 **SUPPORT** (~8,900 seriously ill patients, 5 US medical centers). `time` =
