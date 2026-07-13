@@ -1,3 +1,13 @@
+---
+title: Support Survival
+emoji: 🩺
+colorFrom: green
+colorTo: gray
+sdk: docker
+app_port: 8000
+pinned: false
+---
+
 # Survival Analysis & Mortality Risk Modeling — SUPPORT Cohort
 
 Predicting time-to-death for seriously ill hospitalized patients using classical
