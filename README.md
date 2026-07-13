@@ -28,7 +28,11 @@ support-survival/
 │   ├── evaluate.py         # CV comparison, ROC/PR, calibration, SHAP
 │   ├── validate.py         # held-out split, bootstrap CI, subgroup fairness
 │   ├── pipeline.py         # end-to-end, runnable via CLI
-│   └── api.py              # FastAPI serving layer
+│   ├── api.py              # FastAPI serving layer (routes + business logic only)
+│   └── static/             # frontend: HTML/CSS/JS, served as package data
+│       ├── predict.html / triage.html
+│       ├── css/monitor.css       # shared "bedside monitor" design system
+│       └── js/monitor.js, predict.js, triage.js
 ├── notebooks/              # analysis narrative (one per phase)
 ├── tests/                  # pytest suite
 ├── reports/                # figures + model card
@@ -91,8 +95,12 @@ by the Pydantic schema before it ever reaches the model. `GET /health` is
 used as the container health check.
 
 `GET /` serves a small interactive demo page (form → `/predict` → a risk
-meter with a marker at the cohort's observed baseline event rate) — the
-easiest way to see the model behave without touching `/docs` or `curl`.
+readout with a marker at the cohort's observed baseline event rate) — the
+easiest way to see the model behave without touching `/docs` or `curl`. The
+frontend (`src/support_survival/static/`) is a "bedside monitor" -themed
+design system deliberately grounded in the subject matter (ICU vitals
+displays), not a generic dashboard template — plain HTML/CSS/JS served as
+package data, no build step or frontend framework.
 
 `GET /triage-view` (data from `GET /triage`) is a **risk-stratified patient
 panel** — decision-support triage, not automated resource allocation. It

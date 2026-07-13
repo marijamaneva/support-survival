@@ -108,3 +108,16 @@ def test_triage_view_serves_html_pointing_at_triage_endpoint(client):
     assert response.status_code == 200
     assert "text/html" in response.headers["content-type"]
     assert "/triage" in response.text
+
+
+@pytest.mark.parametrize("path,content_type", [
+    ("/static/css/monitor.css", "text/css"),
+    ("/static/js/monitor.js", "text/javascript"),
+    ("/static/js/predict.js", "text/javascript"),
+    ("/static/js/triage.js", "text/javascript"),
+])
+def test_static_frontend_assets_are_served(client, path, content_type):
+    response = client.get(path)
+    assert response.status_code == 200
+    assert content_type in response.headers["content-type"]
+    assert len(response.text) > 0

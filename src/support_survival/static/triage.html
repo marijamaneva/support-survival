@@ -1,0 +1,64 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>SUPPORT Triage Bay</title>
+<link rel="stylesheet" href="/static/css/monitor.css">
+</head>
+<body>
+  <div class="nameplate">
+    <div class="nameplate-id"><span class="rec-dot"></span> <b>SUPPORT</b>&nbsp;risk monitor &middot; triage bay</div>
+    <div class="tabs">
+      <a href="/">Predictor</a>
+      <a href="/triage-view" class="active">Triage bay</a>
+    </div>
+  </div>
+
+  <div class="monitor wide">
+    <div class="screen">
+      <h1>Triage panel</h1>
+      <p class="subtitle">Decision-support risk stratification, not automated resource allocation.</p>
+
+      <canvas class="waveform" id="waveform"></canvas>
+
+      <div class="banner">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+          stroke-linecap="round" stroke-linejoin="round">
+          <path d="M12 9v4M12 17h.01M10.3 3.9 2 18a2 2 0 0 0 1.7 3h16.6a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0Z"/>
+        </svg>
+        <div>
+          <b>Read before using this panel</b>
+          This ranks a fixed sample of patients from a historical 1990s research cohort, not a live
+          hospital feed &mdash; a demonstration, not a deployed clinical tool. Discrimination is markedly
+          worse for patients 85+ (AUROC ~0.60 vs ~0.74 for under-50s) &mdash; treat risk estimates for the
+          oldest patients as lower-confidence. Tiers are meant to prompt a care-team conversation
+          (e.g. a goals-of-care discussion), never to trigger an automatic decision.
+        </div>
+      </div>
+
+      <div class="stats" id="stats" hidden>
+        <div class="stat stat-urgent"><div class="stat-label">Urgent</div><div class="stat-value mono" id="count-urgent">--</div></div>
+        <div class="stat stat-monitor"><div class="stat-label">Monitor</div><div class="stat-value mono" id="count-monitor">--</div></div>
+        <div class="stat stat-routine"><div class="stat-label">Routine</div><div class="stat-value mono" id="count-routine">--</div></div>
+      </div>
+
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th>Patient</th><th>Age</th><th>Cancer</th>
+              <th>Overall risk</th><th>30-day risk</th><th>90-day risk</th><th>Tier</th>
+            </tr>
+          </thead>
+          <tbody id="rows"></tbody>
+        </table>
+      </div>
+
+      <div class="meta" id="meta">Loading&hellip;</div>
+    </div>
+  </div>
+
+<script type="module" src="/static/js/triage.js"></script>
+</body>
+</html>
